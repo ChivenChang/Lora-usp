@@ -165,7 +165,7 @@ typedef enum host_cmd_id_e
 #if defined( ADD_ALMANAC )
     CMD_CLOUD_ALMANAC_START = 0x7E,
     CMD_CLOUD_ALMANAC_STOP  = 0x7F,
-#endif
+#endif /* ADD_ALMANAC */
     CMD_WIFI_SCAN_START                = 0x80,
     CMD_WIFI_SCAN_CANCEL               = 0x81,
     CMD_WIFI_GET_SCAN_DONE_SCAN_DATA   = 0x82,
@@ -189,7 +189,6 @@ typedef enum host_cmd_id_e
     CMD_MODEM_SET_REPORT_ALL_DOWNLINKS_TO_USER = 0x9A,
 
     CMD_USP_SUBMIT = 0xA0,
-    CMD_USP_CAD    = 0xA1,
     CMD_USP_OPEN   = 0xA2,
     CMD_USP_CLOSE  = 0xA3,
     CMD_USP_ABORT  = 0xA4,
@@ -197,6 +196,13 @@ typedef enum host_cmd_id_e
 
     /* NHM (New Hw Modem) Protocol - Extended commands */
     CMD_NHM_EXTENDED = 0xA6,
+
+#if defined( USE_FLRC_BURST )
+    /* FLRC Burst mode commands */
+    CMD_FLRC_BURST            = 0xB0,  // Start FLRC burst TX or RX mode, returns radio_access_id
+    CMD_SET_FLRC_BURST_PARAMS = 0xB1,  // Set FLRC burst RX configuration parameters
+    CMD_GET_FLRC_BURST_STATS  = 0xB2,  // Get FLRC burst stats only (use NHM_CMD_USP_GET_RESULTS for payload)
+#endif
 
     CMD_MAX
 } host_cmd_id_t;
@@ -328,9 +334,9 @@ typedef enum nhm_packet_boundary_e
 typedef enum nhm_cmd_id_e
 {
     NHM_CMD_USP_SUBMIT           = 0x100, /*!< USP/RAC submit command (replaces CMD_USP_SUBMIT for large packets) */
-    NHM_CMD_USP_CAD              = 0x101, /*!< USP/RAC CAD command (replaces CMD_USP_CAD) */
     NHM_CMD_USP_GET_RESULTS      = 0x102, /*!< USP/RAC get results (replaces CMD_USP_GET_RESULTS) */
     NHM_CMD_USP_GET_NEXT_SEGMENT = 0x103, /*!< USP/RAC get next segment */
+    NHM_CMD_GET_DEVICE_TIME = 0x104, /*!< Get device timestamp (smtc_modem_hal_get_time_in_ms), response: 4 bytes LE */
 } nhm_cmd_id_t;
 
 /**
@@ -378,9 +384,11 @@ typedef struct nhm_segmentation_state_e
 
 typedef struct nhm_segmentation_rsp_state_e
 {
-    uint16_t cmd_id;       /*!< Command ID being segmented (0 = no segmentation) */
-    uint16_t current_pos;  /*!< Current buffer position (0 = no segmentation) */
-    uint16_t total_length; /*!< Total length of answer */
+    uint16_t       cmd_id;           /*!< Command ID being segmented (0 = no segmentation) */
+    uint16_t       current_pos;      /*!< Current byte offset in the response buffer */
+    uint16_t       total_length;     /*!< Total response length in bytes */
+    const uint8_t* buffer;           /*!< Pointer to the contiguous response data */
+    uint8_t        pending_radio_id; /*!< Radio ID whose pending_rac_event to clear on completion */
 } nhm_segmentation_rsp_state_t;
 
 /* Helper macros for NHM header manipulation (UCI compatible) */
@@ -413,9 +421,19 @@ typedef struct nhm_segmentation_rsp_state_e
     } while( 0 )
 
 /* NHM Constants */
-#define NHM_MAX_PAYLOAD_SIZE 251       /*!< Max payload per packet (255 - 4 header bytes) */
+#define NHM_MAX_PAYLOAD_SIZE 248       /*!< Max payload per packet (255 - 4 NHM header - 3 bridge framing) */
 #define NHM_REASSEMBLY_BUFFER_SIZE 700 /*!< Max reassembled message size */
 #define NHM_HEADER_SIZE 4              /*!< NHM header size in bytes */
+
+#define NHM_RSP_STATE_RESET( cmd_id_ )                                           \
+    do                                                                           \
+    {                                                                            \
+        nhm_segmentation_rsp_state.cmd_id           = ( cmd_id_ );               \
+        nhm_segmentation_rsp_state.current_pos      = 0;                         \
+        nhm_segmentation_rsp_state.total_length     = 0;                         \
+        nhm_segmentation_rsp_state.buffer           = nhm_reassembly_rsp_buffer; \
+        nhm_segmentation_rsp_state.pending_radio_id = RAC_INVALID_RADIO_ID;      \
+    } while( 0 )
 
 /**
  * @brief Parse command received on serial link

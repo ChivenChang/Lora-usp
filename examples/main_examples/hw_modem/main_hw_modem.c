@@ -35,8 +35,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "main.h"
-
 #include <smtc_modem_utilities.h>
 
 #include <smtc_rac_api.h>
@@ -60,30 +58,6 @@
  * period (here 32s))
  */
 #define WATCHDOG_RELOAD_PERIOD_MS 20000
-
-/**
- * @brief Callback for modem hal
- */
-static uint8_t prv_get_battery_level_cb( void )
-{
-    return 98;
-}
-
-/**
- * @brief Callback for modem hal
- */
-static uint16_t prv_get_battery_voltage_cb( void )
-{
-    return 3300;
-}
-
-/**
- * @brief Callback for modem hal
- */
-static int8_t prv_get_temperature_cb( void )
-{
-    return 25;
-}
 
 #ifdef ADD_FUOTA
 static uint32_t prv_get_hw_version_for_fuota( void )
@@ -121,13 +95,18 @@ static struct lorawan_fuota_cb prv_fuota_cb = {
 };
 #endif /* CONFIG_LORA_BASICS_MODEM_FUOTA */
 
-void main_hw_modem( void )
+int main( void )
 {
     // Disable IRQ to avoid unwanted behavior during init
     hal_mcu_disable_irq( );
 
     // Configure all the µC peripherals (clock, gpio, timer, ...)
     hal_mcu_init( );
+
+    // Set the soft reset return point.  On Linux, hal_mcu_reset() will longjmp
+    // back here instead of exiting the process, so the RAC and modem stack get
+    // fully reinitialized (simulating a real MCU reset).
+    hal_mcu_set_reset_point( );
 
     // Initialize the RAC
     SMTC_SW_PLATFORM( smtc_rac_init( ) );
