@@ -201,6 +201,7 @@ typedef enum rp_task_types_e
     RP_TASK_TYPE_NONE,
     RP_TASK_TYPE_LOCK_RADIO_ACCESS,
     RP_TASK_TYPE_UNLOCK_RADIO_ACCESS,
+    RP_TASK_TYPE_USER_RX, /* USER task that needs chip awake in hook callback */
 } rp_task_types_t;
 
 /*!
