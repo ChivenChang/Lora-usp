@@ -554,10 +554,19 @@ void rp_callback( radio_planner_t* rp )
             // the arbiter
             rp->radio_is_free = false;  // this is a kind of critical section
             rp_task_free( rp, &rp->tasks[rp->radio_task_id] );
-            SMTC_MODEM_HAL_PANIC_ON_FAILURE( ral_set_sleep( TARGET_RAL, true ) == RAL_STATUS_OK );
             rp->radio = TARGET_RADIO;
-
-            rp_hook_callback( rp, rp->radio_task_id );
+            // USER_RX tasks read chip registers (FIFO, pkt status) in the
+            // hook callback, so the chip must stay awake until the callback returns
+            if( rp->tasks[rp->radio_task_id].type == RP_TASK_TYPE_USER_RX )
+            {
+                rp_hook_callback( rp, rp->radio_task_id );
+                SMTC_MODEM_HAL_PANIC_ON_FAILURE( ral_set_sleep( TARGET_RAL, true ) == RAL_STATUS_OK );
+            }
+            else
+            {
+                SMTC_MODEM_HAL_PANIC_ON_FAILURE( ral_set_sleep( TARGET_RAL, true ) == RAL_STATUS_OK );
+                rp_hook_callback( rp, rp->radio_task_id );
+            }
 
             rp_task_call_aborted( rp );
             rp->radio_is_free  = true;  // end of critical section
@@ -1265,7 +1274,8 @@ rp_hook_status_t rp_get_pkt_payload( radio_planner_t* rp, const rp_task_t* task 
     rp_hook_status_t status = RP_HOOK_STATUS_OK;
     uint8_t          id     = task->hook_id;
 
-    if( ( task->type == RP_TASK_TYPE_USER ) || ( task->type == RP_TASK_TYPE_NONE ) )
+    if( ( task->type == RP_TASK_TYPE_USER ) || ( task->type == RP_TASK_TYPE_NONE ) ||
+        ( task->type == RP_TASK_TYPE_USER_RX ) )
     {
         return status;  // don't catch the payload in case of user task
     }
@@ -1386,6 +1396,9 @@ static void rp_task_print( const radio_planner_t* rp, const rp_task_t* task )
         break;
     case RP_TASK_TYPE_RX_BLE_SCAN:
         SMTC_MODEM_HAL_RP_TRACE_PRINTF( " TASK_RX_BLE_SCAN " );
+        break;
+    case RP_TASK_TYPE_USER_RX:
+        SMTC_MODEM_HAL_RP_TRACE_PRINTF( " TASK_USER_RX " );
         break;
     case RP_TASK_TYPE_NONE:
     case RP_TASK_TYPE_GNSS_SNIFF:
